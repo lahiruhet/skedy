@@ -1,0 +1,7 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { fetchJson, paginatedPanda, FeedError } from "../lib/http.ts";
+test("pagination fetches every page", async () => { let requests = 0; const mock = async () => Response.json(++requests === 1 ? Array.from({ length: 100 }, (_, id) => ({ id })) : [{ id: 100 }]); const rows = await paginatedPanda("csgo/matches/upcoming", "test-token", {}, mock as typeof fetch); assert.equal(rows.length, 101); assert.equal(requests, 2); });
+test("rate limiting honors Retry-After and is not immediately retried", async () => { let requests = 0; await assert.rejects(fetchJson("https://example.com", {}, (async () => { requests++; return new Response("", { status: 429, headers: { "Retry-After": "900" } }); }) as typeof fetch), (e: unknown) => e instanceof FeedError && e.retryAfter === 900); assert.equal(requests, 1); });
+test("malformed JSON and non-list esports responses fail safely", async () => { await assert.rejects(fetchJson("https://example.com", {}, (async () => new Response("not-json")) as typeof fetch), FeedError); await assert.rejects(paginatedPanda("valorant/matches/upcoming", "test", {}, (async () => Response.json({ error: true })) as typeof fetch), FeedError); });
+test("a transient provider error is retried once", async () => { let requests = 0; const result = await fetchJson("https://example.com", {}, (async () => ++requests === 1 ? new Response("", { status: 502 }) : Response.json({ ok: true })) as typeof fetch); assert.deepEqual(result, { ok: true }); assert.equal(requests, 2); });
