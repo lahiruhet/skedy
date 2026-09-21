@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeFootball, footballDecision } from "../lib/providers/espn.ts";
+import { normalizeFootball, footballDecision, scoreboardMonths } from "../lib/providers/espn.ts";
 import { normalizeRace, raceResults } from "../lib/providers/jolpica.ts";
 import { vctCategory, normalizeEsport } from "../lib/providers/pandascore.ts";
 import { cs2Eligibility } from "../lib/cs2-catalogue.ts";
@@ -102,4 +102,9 @@ test("CS2 qualifiers, play-ins, other editions and unknown stages stay hidden", 
 test("main-event Swiss qualification matches are not mistaken for preliminary qualifiers", () => {
   const raw = { ...cs(), name: "Qualification match: A vs B", league: { name: "ESL Pro League" }, serie: { name: "Season 24", year: 2026 }, tournament: { name: "Swiss Stage" }, scheduled_at: "2026-10-04T12:00Z" };
   assert.equal(cs2Eligibility(raw).allowed, true);
+});
+test("ESPN scoreboard months cover the whole window, including year boundaries", () => {
+  assert.deepEqual(scoreboardMonths(new Date("2026-09-14T00:00:00Z"), new Date("2026-10-21T00:00:00Z")), ["202609", "202610"]);
+  assert.deepEqual(scoreboardMonths(new Date("2026-12-29T00:00:00Z"), new Date("2027-02-05T00:00:00Z")), ["202612", "202701", "202702"]);
+  assert.deepEqual(scoreboardMonths(new Date("2026-03-01T00:00:00Z"), new Date("2026-03-31T23:00:00Z")), ["202603"]);
 });

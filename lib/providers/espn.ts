@@ -49,6 +49,12 @@ export function normalizeStandings(data: any): Standing[] {
   const entries = data?.standings?.entries ?? data?.children?.flatMap((child: any) => child.standings?.entries ?? []) ?? [];
   return entries.map((entry: any) => ({ id: String(entry.team?.id), name: entry.team?.displayName ?? "", points: entry.stats?.find((s: any) => s.name === "points")?.value, played: entry.stats?.find((s: any) => s.name === "gamesPlayed")?.value })).filter((s: Standing) => Number.isFinite(s.points) && Number.isFinite(s.played));
 }
+// ESPN's scoreboard rejects date ranges (HTTP 400) but accepts whole months as YYYYMM.
+export function scoreboardMonths(from: Date, to: Date): string[] {
+  const months: string[] = [];
+  for (const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1)); d <= to; d.setUTCMonth(d.getUTCMonth() + 1)) months.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  return months;
+}
 export async function fetchFootball(now = new Date()): Promise<ProviderBatch> {
   const season = footballSeason(now);
   // Team feeds include domestic cups and friendlies; competition feeds provide the quieter panels.
@@ -57,15 +63,14 @@ export async function fetchFootball(now = new Date()): Promise<ProviderBatch> {
   if (!Array.isArray(future.events) || !Array.isArray(past.events)) throw new FeedError("ESPN changed its team schedule format.");
   const events: ScheduleEvent[] = [...future.events, ...past.events].map(e => normalizeFootball(e, undefined, season)).filter((e): e is ScheduleEvent => Boolean(e));
   const warnings: string[] = [];
-  // Weekly slices avoid silently hitting ESPN's result cap on busy competition days.
+  const from = dateOffset(now, -7), to = dateOffset(now, 30);
+  const [firstDay, lastDay] = [from, to].map(d => d.toISOString().slice(0, 10));
   for (const league of ["eng.1", "uefa.champions", "uefa.europa"]) {
-    for (let offset = -7; offset < 30; offset += 7) {
-      const start = dateOffset(now, offset).toISOString().slice(0, 10).replaceAll("-", "");
-      const end = dateOffset(now, Math.min(offset + 6, 30)).toISOString().slice(0, 10).replaceAll("-", "");
+    for (const month of scoreboardMonths(from, to)) {
       try {
-        const data = await fetchJson(`${ROOT}/${league}/scoreboard?dates=${start}-${end}&limit=200`);
+        const data = await fetchJson(`${ROOT}/${league}/scoreboard?dates=${month}&limit=200`);
         if (!Array.isArray(data.events) || data.events.length >= 200) throw new FeedError("The football competition feed is incomplete.");
-        for (const event of data.events) { const normalized = normalizeFootball(event, league, season); if (normalized) events.push(normalized); }
+        for (const event of data.events) { const normalized = normalizeFootball(event, league, season); if (normalized && (!normalized.date || (normalized.date >= firstDay && normalized.date <= lastDay))) events.push(normalized); }
       } catch { warnings.push(COMPETITIONS[league]); break; }
     }
   }
