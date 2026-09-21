@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Without `TURSO_DATABASE_URL`, data is saved to a local SQLite file at `.data/skedy.db` (ignored by Git), and without `SKEDY_PASSWORD` there is no sign-in prompt. `.env` is ignored by Git; never use a `NEXT_PUBLIC_` prefix for the PandaScore token. It stays on the server.
+Open http://localhost:3000. Without `TURSO_DATABASE_URL`, data is saved to a local SQLite file at `.data/skedy.db` (ignored by Git). `.env` is ignored by Git; never use a `NEXT_PUBLIC_` prefix for the PandaScore token. It stays on the server.
 
 The first visit fetches the feeds. Subsequent visits show saved data immediately and refresh sources when due. Refreshing is coordinated across tabs and respects provider backoff. The dashboard checks while it is open; there are no background jobs, notifications or live scores. Completed events show published final results.
 
@@ -54,7 +54,7 @@ A libSQL database (Turso in production, `.data/skedy.db` locally) stores normali
 - `POST /api/sync` — refresh due F1/esports feeds; `?force=1` requests a manual refresh without bypassing rate-limit backoff.
 - `POST /api/football` — claim, save or report failure for a browser football refresh. A short-lived ticket prevents replay and competing writes.
 
-`proxy.ts` puts the whole app behind HTTP Basic auth using `SKEDY_PASSWORD` (any username). On Vercel the app refuses to serve until that variable is set. Its database is a single personal watchlist; do not make it a shared multi-user service without adding user-scoped storage and authorization.
+The app has no sign-in: anyone with the URL can view it, and a visitor's browser can post football updates through `/api/football`. Its database is a single personal watchlist; do not make it a shared multi-user service without adding user-scoped storage and authorization.
 
 ## Verification and deployment
 
@@ -73,6 +73,6 @@ Unit tests cover priority exceptions, trophy elimination, timezone boundaries, f
 
 1. Push this repository to GitHub, then import it at https://vercel.com/new (framework: Next.js, defaults are fine).
 2. In the Vercel project, open **Storage → Marketplace → Turso** and create a database (free plan) and connect it to the project. Check **Settings → Environment Variables**: the app reads exactly `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. If the connect dialog added a prefix, add those two names with the same values. Tables are created on first request.
-3. In **Settings → Environment Variables**, add `PANDASCORE_TOKEN` and `SKEDY_PASSWORD`, then redeploy.
+3. In **Settings → Environment Variables**, add `PANDASCORE_TOKEN`, then redeploy.
 
-Pushes to the default branch then deploy automatically. To smoke-test the deployment, open it, sign in, and check **Preferences & sources** for feed status.
+Pushes to the default branch then deploy automatically. To smoke-test the deployment, open it and check **Preferences & sources** for feed status.
