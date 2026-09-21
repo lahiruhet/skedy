@@ -15,7 +15,6 @@
 
 # next.js
 /.next/
-/.vinext/
 /out/
 
 # misc
@@ -32,11 +31,11 @@ yarn-error.log*
 .env*
 !.env.example
 *.tsbuildinfo
+next-env.d.ts
 
 # vercel
 .vercel
 
-/dist/
-/.wrangler/
-/outputs/
+# local SQLite database and test scratch
+/.data/
 /work/

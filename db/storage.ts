@@ -27,7 +27,7 @@ export class Store {
   async snapshot<T>(key: string, fallback: T): Promise<T> { const row = await this.db.prepare("SELECT data FROM snapshots WHERE key = ?").bind(key).first<{ data: string }>(); return row ? JSON.parse(row.data) : fallback; }
   async saveSnapshot(key: string, data: unknown) { await this.db.prepare("INSERT INTO snapshots(key,data,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at").bind(key, JSON.stringify(data), new Date().toISOString()).run(); }
   async acquire(source: Source, force = false, now = Date.now()): Promise<boolean> {
-    // Shared leases prevent simultaneous tabs/Worker isolates from multiplying API calls.
+    // Shared leases prevent simultaneous tabs/serverless instances from multiplying API calls.
     const result = await this.db.prepare("INSERT INTO sources(id,status,last_attempt,next_refresh,lease_until) VALUES(?,'pending',?,0,?) ON CONFLICT(id) DO UPDATE SET last_attempt=excluded.last_attempt,lease_until=excluded.lease_until WHERE sources.lease_until < ? AND (sources.next_refresh <= ? OR (? = 1 AND sources.status IN ('ready','stale')))").bind(source, new Date(now).toISOString(), now + 300000, now, now, force ? 1 : 0).run();
     return Number(result.meta?.changes ?? result.changes ?? 0) > 0;
   }
