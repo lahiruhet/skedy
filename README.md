@@ -36,7 +36,7 @@ Trophy tracking is deliberately conservative. A league points ceiling proves mat
 | [Jolpica](https://github.com/jolpica/jolpica-f1/blob/main/docs/README.md) | Published F1 season, qualifying, sprint qualifying, sprint and GP; recent final classifications | 6 hours; 5 minutes around events |
 | [PandaScore](https://developers.pandascore.co/docs) | VCT Masters/Champions and four main regions; curated S-tier CS2 matches over the next 30 days; seven days of results | 15 minutes; 5 minutes around events |
 
-ESPN is an unofficial, keyless feed and can change. Its public endpoint supports browser CORS but rejected server-side requests during development. Football is therefore fetched directly in the browser, normalized, validated and saved through a same-origin endpoint under a short refresh lease. Football can fail if the browser or network blocks ESPN; saved fixtures remain available. F1 and PandaScore refresh on the server.
+ESPN is an unofficial, keyless feed and can change. All three sources refresh on the server; browsers only read the saved schedule.
 
 Provider outages never replace the saved calendar with an empty error response. Undated matches remain TBC. Result availability depends on the provider; there is no promise of live updates. F1 excludes practice sessions. VCT excludes Challengers, Game Changers, Ascension and offseason events.
 
@@ -51,10 +51,9 @@ For each new edition, verify its Liquipedia page and main-event dates/format; ad
 A libSQL database (Turso in production, `.data/skedy.db` locally) stores normalized events, source status/leases and standings/provider snapshots. `db/storage.ts` defines the schema and creates it idempotently on first use; `db/libsql.ts` adapts the libSQL client. Stable provider IDs update postponed/rescheduled fixtures in place and prevent Spurs duplicates across competition feeds.
 
 - `GET /api/schedule` — cached ranked events, trophy state and source status; optional `sport`, `from`, `to` filters.
-- `POST /api/sync` — refresh due F1/esports feeds; `?force=1` requests a manual refresh without bypassing rate-limit backoff.
-- `POST /api/football` — claim, save or report failure for a browser football refresh. A short-lived ticket prevents replay and competing writes.
+- `POST /api/sync` — refresh due football, F1 and esports feeds and return the schedule; `?force=1` requests a manual refresh without bypassing rate-limit backoff.
 
-The app has no sign-in: anyone with the URL can view it, and a visitor's browser can post football updates through `/api/football`. Its database is a single personal watchlist; do not make it a shared multi-user service without adding user-scoped storage and authorization.
+The app has no sign-in: anyone with the URL can view it and trigger refreshes, which shared leases and provider backoff keep within rate limits. Nothing a visitor sends is stored. Its database is a single personal watchlist; do not make it a shared multi-user service without adding user-scoped storage and authorization.
 
 ## Verification and deployment
 
@@ -67,7 +66,7 @@ npm run build
 npm run test:smoke
 ```
 
-Unit tests cover priority exceptions, trophy elimination, timezone boundaries, feed normalization, strict CS2 exclusions, pagination, backoff and durable SQLite persistence. The HTTP smoke check exercises real feeds, refresh/save/replay protection and route filtering. It uses native Node for the browser's ESPN transport; it is not a browser rendering test.
+Unit tests cover priority exceptions, trophy elimination, timezone boundaries, feed normalization, strict CS2 exclusions, pagination, backoff and durable SQLite persistence. The HTTP smoke check exercises real feeds, refreshes and route filtering; it is not a browser rendering test.
 
 ### Deploy to Vercel
 

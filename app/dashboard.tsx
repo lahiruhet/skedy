@@ -6,7 +6,6 @@ import type { Category, ScheduleEvent, ScheduleResponse, Sport } from "../lib/ty
 import { DEFAULT_TIMEZONE } from "../lib/types";
 import { dateOffset, footballSeason, localDate, withinDates } from "../lib/time";
 import { spotlight } from "../lib/priorities";
-import { refreshBrowserFootball } from "../lib/browser-football";
 import { useDeviceTimezone, saveDeviceTimezone } from "../lib/device-timezone";
 
 type View = "overview" | "agenda" | "spurs" | "results";
@@ -71,14 +70,10 @@ export default function Dashboard({ initialNow }: { initialNow: string }) {
     if (busy.current) return;
     busy.current = true; setSyncing(true);
     try {
-      const outcomes = await Promise.allSettled([
-        (async () => { const response = await fetch(`/api/sync${force ? "?force=1" : ""}`, { method: "POST" }); if (!response.ok) throw new Error("Refresh is unavailable. Your saved schedule is still here."); })(),
-        refreshBrowserFootball(force),
-      ]);
-      const response = await fetch("/api/schedule");
-      if (response.ok) setData(await response.json());
-      const failed = outcomes.find(r => r.status === "rejected");
-      setError(failed ? "Some schedules couldn’t refresh. Your saved fixtures are still here." : null);
+      // The sync response is the refreshed schedule; per-feed failures are reported in its sources.
+      const response = await fetch(`/api/sync${force ? "?force=1" : ""}`, { method: "POST" });
+      if (!response.ok) throw new Error("Refresh is unavailable. Your saved schedule is still here.");
+      setData(await response.json()); setError(null);
     } catch (e) { setError(e instanceof Error ? e.message : "Refresh is unavailable."); }
     finally { busy.current = false; setSyncing(false); }
   }, []);

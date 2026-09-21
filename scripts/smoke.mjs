@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { fetchFootball } from '../lib/providers/espn.ts';
 const base = process.env.SKEDY_URL || 'http://localhost:3000';
 const page = await fetch(base);
 assert.equal(page.status, 200);
@@ -9,17 +8,7 @@ assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 assert.equal((await fetch(base + '/api/schedule?sport=invalid')).status, 400);
 assert.equal((await fetch(base + '/api/schedule?from=2026-99-99')).status, 400);
 assert.equal((await fetch(base + '/api/sync', { method: 'POST', headers: { Origin: 'https://unrelated.example' } })).status, 403);
-const postFootball = body => fetch(base + '/api/football', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-assert.equal((await postFootball({ action: 'save', ticket: 'invalid', events: [] })).status, 409);
-const claimResponse = await postFootball({ action: 'claim', force: true });
-assert.equal(claimResponse.status, 200);
-const claim = await claimResponse.json();
-if (claim.claimed) {
-  const football = await fetchFootball();
-  const saved = await postFootball({ action: 'save', ticket: claim.ticket, events: football.events, standings: football.standings, warning: football.context?.warning });
-  assert.equal(saved.status, 200, await saved.text());
-  assert.equal((await postFootball({ action: 'save', ticket: claim.ticket, events: football.events })).status, 409, 'A saved refresh cannot be replayed');
-}
+assert.equal((await fetch(base + '/api/football', { method: 'POST' })).status, 404, 'Browsers can no longer write football data');
 const response = await fetch(base + '/api/sync?force=1', { method: 'POST', signal: AbortSignal.timeout(180000) });
 assert.equal(response.status, 200);
 const data = await response.json();

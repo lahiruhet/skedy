@@ -1,5 +1,6 @@
 import type { Store } from "../db/storage.ts";
 import type { ScheduleResponse, Source, Standing, ProviderBatch } from "./types.ts";
+import { fetchFootball } from "./providers/espn.ts";
 import { fetchFormulaOne } from "./providers/jolpica.ts";
 import { fetchEsports } from "./providers/pandascore.ts";
 import { deriveTrophy, rankEvent, deduplicate } from "./priorities.ts";
@@ -15,6 +16,7 @@ export async function schedule(store: Store, now = new Date()): Promise<Schedule
 export async function synchronize(store: Store, token: string, force = false, now = new Date()) {
   const existing = await store.events();
   const tasks: { id: Source; fetch: () => Promise<ProviderBatch>; ttl: number }[] = [
+    { id: "espn", fetch: () => fetchFootball(now), ttl: 3600 },
     { id: "jolpica", fetch: () => fetchFormulaOne(now), ttl: 21600 },
     { id: "pandascore", fetch: () => fetchEsports(token, now), ttl: 900 },
   ];

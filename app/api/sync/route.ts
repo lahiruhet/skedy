@@ -1,6 +1,6 @@
 import { getStore, pandaToken } from "../../../lib/runtime.ts";
 import { synchronize } from "../../../lib/sync.ts";
-// A full F1 + PandaScore refresh takes ~10s; allow headroom on every Vercel plan.
+// A full football + F1 + PandaScore refresh takes ~10s; allow headroom on every Vercel plan.
 export const maxDuration = 60;
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
