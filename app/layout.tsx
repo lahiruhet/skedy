@@ -1,5 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
+
+const body = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
+const display = Inter_Tight({ subsets: ["latin"], variable: "--font-display", display: "swap" });
 
 // Vercel provides the production hostname at build and run time.
 const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000";
@@ -19,13 +23,15 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: "Skedy — Your watchlist", images: ["/og.png"] },
 };
 
+export const viewport: Viewport = { themeColor: "#f4efe6" };
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${body.variable} ${display.variable}`}>
       <body>
         {children}
       </body>

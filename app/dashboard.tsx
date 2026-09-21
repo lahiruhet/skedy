@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowRight, ArrowUpRight, CalendarDays, CheckCheck, ChevronRight, CircleHelp, Clock3, ExternalLink, Flag, LayoutGrid, ListFilter, LoaderCircle, MapPin, Radio, RefreshCw, Search, Settings2, Shield, Star, Trophy, X, Zap, Gamepad2 } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUpRight, CalendarDays, CheckCheck, ChevronRight, Clock3, ExternalLink, Flag, Gamepad2, LayoutGrid, LoaderCircle, MapPin, Radio, RefreshCw, Search, Settings2, Shield, Star, Trophy, X, Zap } from "lucide-react";
 import type { Category, ScheduleEvent, ScheduleResponse, Sport } from "../lib/types";
 import { DEFAULT_TIMEZONE } from "../lib/types";
 import { dateOffset, footballSeason, localDate, withinDates } from "../lib/time";
@@ -10,12 +10,22 @@ import { useDeviceTimezone, saveDeviceTimezone } from "../lib/device-timezone";
 
 type View = "overview" | "agenda" | "spurs" | "results";
 const SPORT_NAMES: Record<Sport, string> = { football: "Football", f1: "Formula 1", valorant: "VALORANT", cs2: "Counter-Strike 2" };
+const SPORT_SHORT: Record<Sport, string> = { football: "Football", f1: "F1", valorant: "VALORANT", cs2: "CS2" };
+const SPORT_ICONS: Record<Sport, typeof Shield> = { football: Shield, f1: Flag, valorant: Zap, cs2: Gamepad2 };
 const CATEGORY_NAMES: Record<Category, string> = { spurs: "Tottenham", pl: "Premier League", ucl: "Champions League", uel: "Europa League", football: "Football", f1: "Formula 1", vct_international: "VCT International", vct_americas: "VCT Americas", vct_pacific: "VCT Pacific", vct_emea: "VCT EMEA", vct_china: "VCT China", cs2: "S-tier CS2" };
-const NAV = [{ key: "overview", label: "Overview", Icon: LayoutGrid }, { key: "agenda", label: "My agenda", Icon: CalendarDays }, { key: "spurs", label: "Spurs season", Icon: Shield }, { key: "results", label: "Results", Icon: CheckCheck }] as const;
+const NAV = [{ key: "overview", label: "Overview", Icon: LayoutGrid }, { key: "agenda", label: "Agenda", Icon: CalendarDays }, { key: "spurs", label: "Spurs", Icon: Shield }, { key: "results", label: "Results", Icon: CheckCheck }] as const;
+const HEADINGS: Record<View, { title: string; lede: string; list: string }> = {
+  overview: { title: "Your watchlist.", lede: "The games you care about. All in one place.", list: "On your calendar" },
+  agenda: { title: "Make time for the game.", lede: "A little less searching. A lot more watching.", list: "On your calendar" },
+  spurs: { title: "Every game. All Spurs.", lede: "League, cups, Europe and friendlies. Nothing left out.", list: "The season so far and ahead" },
+  results: { title: "How it played out.", lede: "Confirmed final results from the last seven days.", list: "The final word" },
+};
+const RANGES = [{ value: 1, label: "Today" }, { value: 7, label: "7 days" }, { value: 30, label: "30 days" }];
+const PRIORITIES = ["Every Tottenham game", "Premier League & European football", "F1 · McLaren & Lando Norris", "VCT internationals", "Americas → Pacific → EMEA → China", "Liquipedia S-tier Counter-Strike"];
 
-function Badge({ sport, small = false }: { sport: Sport; small?: boolean }) {
-  const Icon = sport === "football" ? Shield : sport === "f1" ? Flag : sport === "valorant" ? Zap : Gamepad2;
-  return <span className={`sport-badge ${sport} ${small ? "small" : ""}`}><Icon size={small ? 13 : 16} />{SPORT_NAMES[sport]}</span>;
+function Badge({ sport }: { sport: Sport }) {
+  const Icon = SPORT_ICONS[sport];
+  return <span className="sport-badge" data-sport={sport}><Icon size={15} />{SPORT_NAMES[sport]}</span>;
 }
 function Logo({ src, name, className = "" }: { src?: string; name: string; className?: string }) {
   const [failed, setFailed] = useState(false);
@@ -39,6 +49,26 @@ function countdown(event: ScheduleEvent, now: Date) {
   return days ? `${days}d ${hours}h to go` : hours ? `${hours}h ${mins}m to go` : `${mins}m to go`;
 }
 
+function EventMark({ event }: { event: ScheduleEvent }) {
+  const [home, away] = event.participants;
+  const Icon = SPORT_ICONS[event.sport];
+  return <span className="event-mark" aria-hidden="true">{home ? <><Logo src={home.logo} name={home.name} />{away && <Logo src={away.logo} name={away.name} />}</> : <span className="event-icon"><Icon size={18} /></span>}</span>;
+}
+function EventRow({ event, timezone, onOpen, compact = false }: { event: ScheduleEvent; timezone: string; onOpen: (event: ScheduleEvent) => void; compact?: boolean }) {
+  const isSpurs = event.category === "spurs";
+  const status = event.status === "completed" ? "Final" : event.status === "in_progress" ? "In progress" : event.status === "postponed" ? "Postponed" : compact ? formatDay(event, timezone, { month: "short", day: "numeric" }) : null;
+  return <button className={`event-row${compact ? " compact" : ""}`} data-sport={isSpurs ? "spurs" : event.sport} onClick={() => onOpen(event)}>
+    <span className="event-time"><strong>{formatTime(event, timezone)}</strong>{status && <small>{status}</small>}</span>
+    <EventMark event={event} />
+    <span className="event-copy">
+      <strong>{event.title}{isSpurs && <Star size={13} fill="currentColor" aria-label="Spurs" />}</strong>
+      <small>{event.competition}{event.stage && !event.stage.includes("Premier League") ? ` · ${event.stage}` : ""}</small>
+    </span>
+    {event.result ? <span className="event-result">{event.result}</span> : !compact && <span className="event-tag">{isSpurs ? "Don’t miss" : event.sport === "f1" ? event.stage : CATEGORY_NAMES[event.category]}</span>}
+    <ChevronRight size={18} className="event-arrow" aria-hidden="true" />
+  </button>;
+}
+
 export default function Dashboard({ initialNow }: { initialNow: string }) {
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [now, setNow] = useState(new Date(initialNow));
@@ -57,7 +87,6 @@ export default function Dashboard({ initialNow }: { initialNow: string }) {
   const limit = pagination.key === filterKey ? pagination.count : 12;
   const dialog = useRef<HTMLDialogElement>(null);
   const busy = useRef(false);
-  const agendaRef = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -116,56 +145,185 @@ export default function Dashboard({ initialNow }: { initialNow: string }) {
   const sourcesReady = data?.sources.filter(s => s.lastSuccess).length ?? 0;
   const sportCounts = (name: Sport) => upcoming.filter(e => e.sport === name && withinDates(e, today, localDate(dateOffset(now, 29), timezone), timezone)).length;
   const navigate = (target: View, filter: Sport | "all" = "all") => { setView(target); setSport(filter); setQuery(""); if (target !== "overview") window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const closeDialog = () => { setSelected(null); setSettings(false); };
+  const isDefaultZone = timezone === DEFAULT_TIMEZONE;
+  const zoneName = isDefaultZone ? "Sri Lanka" : timezone.split("/").at(-1)?.replaceAll("_", " ");
+  const zoneOffset = new Intl.DateTimeFormat("en", { timeZone: timezone, timeZoneName: "shortOffset" }).formatToParts(now).find(p => p.type === "timeZoneName")?.value;
+  const heading = HEADINGS[view];
+  const sportCards = [
+    { sport: "f1", title: "Formula 1", event: nextF1, description: "McLaren & Lando Norris" },
+    { sport: "valorant", title: "VCT", event: nextVct, description: "Internationals, then your regions" },
+    { sport: "cs2", title: "Counter-Strike 2", event: nextCs, description: "S-tier main events only" },
+  ] as const;
 
-  function EventRow({ event, compact = false }: { event: ScheduleEvent; compact?: boolean }) {
-    const isSpurs = event.category === "spurs";
-    return <button className={`event-row ${compact ? "compact" : ""} ${isSpurs ? "spurs-row" : ""}`} onClick={() => setSelected(event)}>
-      <div className="event-time"><strong>{formatTime(event, timezone)}</strong><span>{event.status === "completed" ? "FINAL" : event.status === "in_progress" ? "IN PROGRESS" : event.status === "postponed" ? "POSTPONED" : compact ? formatDay(event, timezone, { month: "short", day: "numeric" }) : timezone === DEFAULT_TIMEZONE ? "SLST" : "LOCAL"}</span></div>
-      <div className={`event-mark ${event.sport}`}>{event.participants[0] ? <div className="paired-logos"><Logo src={event.participants[0]?.logo} name={event.participants[0]?.name ?? "TBC"} />{event.participants[1] && <Logo src={event.participants[1].logo} name={event.participants[1].name} />}</div> : event.sport === "f1" ? <Flag size={22} /> : <Gamepad2 size={22} />}</div>
-      <div className="event-copy"><strong>{event.title}{isSpurs && <Star size={12} fill="currentColor" />}</strong><span>{event.competition}{event.stage && !event.stage.includes("Premier League") ? ` · ${event.stage}` : ""}</span></div>
-      {event.result ? <span className="event-result">{event.result}</span> : !compact && <span className={`category-pill ${event.sport}`}>{isSpurs ? "DON’T MISS" : event.sport === "f1" ? event.stage : CATEGORY_NAMES[event.category]}</span>}
-      <ChevronRight size={16} className="row-arrow" />
-    </button>;
-  }
-
-  return <div className="app-shell">
+  return <div className="app">
     <a className="skip-link" href="#main-content">Skip to schedule</a>
-    <aside className="sidebar">
-      <button className="brand" onClick={() => navigate("overview")} aria-label="Skedy home"><span className="brand-mark">s<span /></span>skedy<span className="brand-dot">.</span></button>
-      <div className="sidebar-label">YOUR SPACE</div>
-      <nav aria-label="Main navigation">{NAV.map(({ key, label, Icon }) => <button key={key} className={`nav-item ${view === key ? "active" : ""}`} aria-current={view === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={18} />{label}{key === "spurs" && <span className="nav-star">★</span>}</button>)}</nav>
-      <div className="sidebar-label following-label">IN YOUR CORNER</div>
-      <div className="following-list"><button onClick={() => navigate("spurs")}><span className="following-dot football" />Tottenham Hotspur<Star size={12} /></button><button onClick={() => navigate("agenda", "f1")}><span className="following-dot f1" />McLaren & Lando<span className="driver-number">LN</span></button><button onClick={() => navigate("agenda", "valorant")}><span className="following-dot valorant" />VALORANT Champions Tour</button><button onClick={() => navigate("agenda", "cs2")}><span className="following-dot cs2" />S-tier Counter-Strike</button></div>
-      <div className="sidebar-bottom"><div className="personal-note"><span className="tiny-eyebrow">THE RULE IS SIMPLE</span><p>More of your sport.<br />Less of everything else.</p><span className="note-lines" /></div><button className="settings-link" onClick={() => setSettings(true)}><Settings2 size={18} />Preferences & sources</button><div className="profile"><span>L</span><div><strong>Lahiru’s watchlist</strong><small>Just your kind of sport</small></div><span className="profile-online" /></div></div>
-    </aside>
+    <header className="masthead">
+      <div className="masthead-inner">
+        <button className="brand" onClick={() => navigate("overview")} aria-label="Skedy home">skedy<span>.</span></button>
+        <nav className="tabs" aria-label="Main navigation">
+          {NAV.map(({ key, label, Icon }) => <button key={key} className="tab" aria-current={view === key ? "page" : undefined} onClick={() => navigate(key)}><Icon size={20} aria-hidden="true" />{label}</button>)}
+        </nav>
+        <div className="masthead-actions">
+          <span className="zone">{zoneName}<span>{zoneOffset}</span></span>
+          <button className={`icon-button${syncing ? " is-syncing" : ""}`} onClick={() => refresh(true)} disabled={syncing} aria-label="Refresh schedules"><RefreshCw size={18} /><span>{syncing ? "Syncing" : "Refresh"}</span></button>
+          <button className="icon-button" onClick={() => setSettings(true)} aria-label="Preferences and sources"><Settings2 size={18} /></button>
+        </div>
+      </div>
+    </header>
 
-    <div className="main-wrap"><header className="topbar"><div className="breadcrumb">My workspace <ChevronRight size={13} /><strong>{NAV.find(n => n.key === view)?.label}</strong></div><div className="topbar-right"><span className="timezone"><span />{timezone === DEFAULT_TIMEZONE ? "Sri Lanka" : timezone.split("/").at(-1)?.replaceAll("_", " ")}<span className="timezone-offset">{new Intl.DateTimeFormat("en", { timeZone: timezone, timeZoneName: "shortOffset" }).formatToParts(now).find(p => p.type === "timeZoneName")?.value}</span></span><button className={`refresh-button ${syncing ? "is-syncing" : ""}`} onClick={() => refresh(true)} disabled={syncing} aria-label="Refresh schedules"><RefreshCw size={15} /><span>{syncing ? "Syncing" : "Refresh"}</span></button></div></header>
     <main id="main-content">
-      <section className="page-heading"><div><div className="eyebrow">{new Intl.DateTimeFormat("en-GB", { timeZone: timezone, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(now)}</div><h1>{view === "overview" ? "Your watchlist." : view === "agenda" ? "Make time for the game." : view === "spurs" ? "Every game. All Spurs." : "How it played out."}<span className="heading-dot" /></h1><p>{view === "overview" ? "The games you care about. All in one place." : view === "agenda" ? "A little less searching. A lot more watching." : view === "spurs" ? "League, cups, Europe and friendlies. Nothing left out." : "Confirmed final results from the last seven days."}</p></div><div className="heading-status"><span className={syncing ? "pulse-dot" : "status-dot"} />{syncing ? "Updating your watchlist" : `${sourcesReady} of 3 sources connected`}<button aria-label="View data sources" onClick={() => setSettings(true)}><CircleHelp size={14} /></button></div></section>
-      {error && <div className="notice" role="alert">{error}<button onClick={() => refresh(true)}>Try again <ArrowRight size={14} /></button></div>}
-      {data?.sources.some(s => s.status === "error") && <div className="notice source-notice"><Radio size={16} /><span>Some feeds couldn’t refresh. Your last saved fixtures are still here.</span><button onClick={() => setSettings(true)}>View sources</button></div>}
+      <section className="page-head">
+        <div>
+          <p className="eyebrow">{new Intl.DateTimeFormat("en-GB", { timeZone: timezone, weekday: "long", day: "numeric", month: "long" }).format(now)}</p>
+          <h1>{heading.title}</h1>
+          <p className="lede">{heading.lede}</p>
+        </div>
+        <button className="sync-status" onClick={() => setSettings(true)}><span className={syncing ? "status-dot pulse" : "status-dot"} />{syncing ? "Updating your watchlist" : `${sourcesReady} of ${data?.sources.length ?? 3} sources connected`}</button>
+      </section>
+      {error && <div className="notice" role="alert"><span>{error}</span><button onClick={() => refresh(true)}>Try again <ArrowRight size={15} /></button></div>}
+      {data?.sources.some(s => s.status === "error") && <div className="notice"><Radio size={18} /><span>Some feeds couldn’t refresh. Your last saved fixtures are still here.</span><button onClick={() => setSettings(true)}>View sources</button></div>}
 
       {view === "overview" && <>
-        <div className="spotlight-grid"><section className={`spotlight-card ${feature?.sport ?? "football"}`} aria-label="Priority event"><div className="spotlight-texture" /><div className="spotlight-top"><span className="spotlight-label"><Star size={13} fill="currentColor" />{feature?.category === "spurs" ? "YOUR NO. 1" : "IN THE SPOTLIGHT"}</span><span className="spotlight-competition">{feature?.competition ?? "TOTTENHAM HOTSPUR"}</span></div>
-          {feature ? <><div className="spotlight-content"><div className="hero-kicker">{feature.category === "spurs" ? "COME ON YOU SPURS" : feature.sport === "f1" ? "LIGHTS OUT. EYES ON LANDO." : "CLEAR YOUR CALENDAR"}</div><h2>{feature.participants.length >= 2 ? <>{feature.participants[0].shortName}<span className="hero-versus">vs</span>{feature.participants[1].shortName}</> : feature.title}</h2><div className="hero-meta"><span><CalendarDays size={15} />{formatDay(feature, timezone)}</span><span><Clock3 size={15} />{formatTime(feature, timezone)} {timezone === DEFAULT_TIMEZONE ? "SLST" : "local"}</span></div>{feature.venue && <div className="hero-venue"><MapPin size={14} />{feature.venue}</div>}</div><div className="hero-art" aria-hidden="true">{feature.category === "spurs" ? <><span className="hero-ring ring-one" /><span className="hero-ring ring-two" /><Logo src={feature.participants.find(p => p.id === "367")?.logo ?? "https://a.espncdn.com/i/teamlogos/soccer/500/367.png"} name="Tottenham Hotspur" /><span className="coys">COYS</span></> : feature.sport === "f1" ? <Flag size={150} strokeWidth={1} /> : <Trophy size={150} strokeWidth={1} />}</div><div className="spotlight-footer"><span><span className="live-dot" />{countdown(feature, now)}</span><button onClick={() => setSelected(feature)}>Match details <ArrowUpRight size={17} /></button></div></> : <div className="spotlight-empty"><Shield size={50} strokeWidth={1} /><h2>{syncing || !data ? "Finding your next game." : "Waiting for the next fixture."}</h2><p>{syncing || !data ? "Your watchlist is coming together." : "Newly announced matches will appear after the next refresh."}</p></div>}
-        </section>
-        <section className="football-panel"><div className="panel-title"><span className="tiny-eyebrow">ALSO ON THE PITCH</span><Shield size={16} aria-hidden="true" /></div><h2>Around the grounds<span>.</span></h2><div className="competition-tabs">{(["pl", ...(data?.trophy.europa ? ["uel", "ucl"] : ["ucl", "uel"])] as Category[]).map(c => <button key={c} className={footballTab === c ? "selected" : ""} aria-pressed={footballTab === c} onClick={() => setFootballTab(c)}>{c.toUpperCase()}</button>)}</div><div className="football-mini-list">{football.slice(0, 3).map(e => <EventRow key={e.id} event={e} compact />)}{!football.length && <p className="quiet-empty">{syncing || !data ? "Fetching the football calendar…" : "No other football fixtures announced in the next 30 days."}</p>}</div><button className="text-action" onClick={() => { navigate("agenda", "football"); setDays(30); }}>All football <ArrowRight size={15} /></button></section></div>
+        <div className="overview-grid">
+          <section className="spotlight" aria-label="Priority event">
+            {feature ? <>
+              <div className="spotlight-top">
+                <span className="spotlight-label" data-sport={feature.category === "spurs" ? "spurs" : feature.sport}><Star size={14} fill="currentColor" />{feature.category === "spurs" ? "Your No. 1" : "In the spotlight"}</span>
+                <span className="spotlight-competition">{feature.competition}</span>
+              </div>
+              <div className="spotlight-body">
+                {feature.participants.length >= 2 && <div className="spotlight-crests" aria-hidden="true">{feature.participants.slice(0, 2).map(p => <span className="crest" key={p.id}><Logo src={p.logo} name={p.name} /></span>)}</div>}
+                <p className="spotlight-kicker">{feature.category === "spurs" ? "Come on you Spurs" : feature.sport === "f1" ? "Lights out. Eyes on Lando." : "Clear your calendar"}</p>
+                <h2>{feature.participants.length >= 2 ? <>{feature.participants[0].shortName}<span className="versus">vs</span>{feature.participants[1].shortName}</> : feature.title}</h2>
+                <div className="spotlight-meta">
+                  <span><CalendarDays size={18} />{formatDay(feature, timezone)}</span>
+                  <span><Clock3 size={18} />{formatTime(feature, timezone)} {isDefaultZone ? "SLST" : "local"}</span>
+                  {feature.venue && <span><MapPin size={18} />{feature.venue}</span>}
+                </div>
+              </div>
+              <div className="spotlight-foot">
+                <span className="countdown" data-sport={feature.category === "spurs" ? "spurs" : feature.sport}><span className={feature.status === "in_progress" ? "live-dot pulse" : "live-dot"} />{countdown(feature, now)}</span>
+                <button onClick={() => setSelected(feature)}>Details <ArrowUpRight size={18} /></button>
+              </div>
+            </> : <div className="spotlight-empty">
+              <h2>{syncing || !data ? "Finding your next game." : "Waiting for the next fixture."}</h2>
+              <p>{syncing || !data ? "Your watchlist is coming together." : "Newly announced matches will appear after the next refresh."}</p>
+            </div>}
+          </section>
 
-        <div className="section-line"><h2>Beyond the pitch</h2><span>YOUR OTHER MUST-WATCHES</span></div>
-        <div className="sport-cards">{([{ sport: "f1", kicker: "PAPAYA, ALL THE WAY", title: "Formula 1", event: nextF1, description: "McLaren & Lando Norris", Icon: Flag }, { sport: "valorant", kicker: "THE WORLD IS WATCHING", title: "VCT", event: nextVct, description: "Internationals → your regions", Icon: Zap }, { sport: "cs2", kicker: "ONLY THE BIG STAGE", title: "Counter-Strike 2", event: nextCs, description: "S-tier. No play-ins. No qualifiers.", Icon: Gamepad2 }] as const).map(card => <button className={`sport-card ${card.sport}`} key={card.sport} onClick={() => { navigate("agenda", card.sport); setDays(30); }}><div className="sport-card-top"><span className="tiny-eyebrow">{card.kicker}</span><ArrowUpRight size={17} /></div><div className="sport-card-title"><card.Icon size={25} /><h3>{card.title}</h3><span>{sportCounts(card.sport)}</span></div><p className="sport-follow">{card.description}</p><div className="sport-card-divider" /><div className="sport-card-bottom"><span className="card-next-label">UP NEXT</span><strong>{card.event ? card.event.sport === "f1" ? card.event.title.replace("Grand Prix", "GP") : card.event.title : data?.sources.find(s => s.id === "pandascore")?.status === "setup" && card.sport !== "f1" ? "Connect your esports feed" : syncing ? "Checking the schedule…" : "Awaiting the next schedule"}</strong><span className="next-event-date">{card.event ? `${formatDay(card.event, timezone)} · ${formatTime(card.event, timezone)}` : "We’ll save you a spot."}{card.event?.sport === "f1" && <em>{card.event.stage}</em>}</span></div></button>)}</div>
+          <section className="card football-panel" aria-labelledby="football-title">
+            <h2 id="football-title">Around the grounds</h2>
+            <div className="segmented" role="group" aria-label="Competition">
+              {(["pl", ...(data?.trophy.europa ? ["uel", "ucl"] : ["ucl", "uel"])] as Category[]).map(c => <button key={c} aria-pressed={footballTab === c} onClick={() => setFootballTab(c)}>{c.toUpperCase()}</button>)}
+            </div>
+            <div className="football-list">
+              {football.slice(0, 3).map(e => <EventRow key={e.id} event={e} timezone={timezone} onOpen={setSelected} compact />)}
+              {!football.length && <p className="quiet">{syncing || !data ? "Fetching the football calendar…" : "No other football fixtures announced in the next 30 days."}</p>}
+            </div>
+            <button className="text-link" onClick={() => { navigate("agenda", "football"); setDays(30); }}>All football <ArrowRight size={16} /></button>
+          </section>
+        </div>
+
+        <div className="section-head"><h2>Beyond the pitch</h2></div>
+        <div className="sport-cards">
+          {sportCards.map(card => {
+            const Icon = SPORT_ICONS[card.sport];
+            return <button className="sport-card" data-sport={card.sport} key={card.sport} onClick={() => { navigate("agenda", card.sport); setDays(30); }}>
+              <span className="sport-card-head"><span className="sport-icon"><Icon size={20} /></span><strong>{card.title}</strong><span className="count" title="Events in the next 30 days">{sportCounts(card.sport)}</span></span>
+              <span className="sport-card-follow">{card.description}</span>
+              <span className="sport-card-next">
+                <small>Up next</small>
+                <strong>{card.event ? card.event.sport === "f1" ? card.event.title.replace("Grand Prix", "GP") : card.event.title : data?.sources.find(s => s.id === "pandascore")?.status === "setup" && card.sport !== "f1" ? "Connect your esports feed" : syncing ? "Checking the schedule…" : "Awaiting the next schedule"}</strong>
+                <span>{card.event ? `${formatDay(card.event, timezone)} · ${formatTime(card.event, timezone)}` : "We’ll save you a spot."}{card.event?.sport === "f1" && ` · ${card.event.stage}`}</span>
+              </span>
+            </button>;
+          })}
+        </div>
       </>}
 
-      <section className="agenda-section" ref={agendaRef} aria-label="Schedule"><div className="agenda-heading"><div><h2>{view === "results" ? "The final word" : view === "spurs" ? "The season ahead — and so far" : "On your calendar"}<span>{filtered.length}</span></h2>{view === "overview" && <p>All your sport, in start-time order.</p>}</div>{view !== "spurs" && view !== "results" && <div className="date-switch" aria-label="Date range">{[{ value: 1, label: "Today" }, { value: 7, label: "Next 7 days" }, { value: 30, label: "Next 30 days" }].map(option => <button key={option.value} className={days === option.value ? "active" : ""} onClick={() => setDays(option.value)} aria-pressed={days === option.value}>{option.label}</button>)}</div>}</div>
-        <div className="agenda-controls">{view !== "spurs" && <div className="sport-filters" aria-label="Filter by sport"><button className={sport === "all" ? "active" : ""} onClick={() => setSport("all")}><ListFilter size={13} />All sports</button>{Object.entries(SPORT_NAMES).map(([key, name]) => <button className={sport === key ? `active ${key}` : key} key={key} onClick={() => setSport(key as Sport)}><span className={`filter-dot ${key}`} />{name === "Counter-Strike 2" ? "CS2" : name}</button>)}</div>}<label className="search-field"><Search size={15} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a team or event" aria-label="Search schedules" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={13} /></button>}</label></div>
-        <div className="agenda-list">{[...groups.entries()].map(([day, rows]) => <div className="day-group" key={day}><div className="day-heading"><span>{day === "tbc" ? "DATE TO BE CONFIRMED" : new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`))}</span>{day === today && <em>TODAY</em>}<span className="day-rule" /></div>{rows.map(event => <EventRow key={event.id} event={event} />)}</div>)}
-        {!filtered.length && <div className="agenda-empty">{syncing ? <LoaderCircle size={28} className="spin" /> : <CalendarDays size={30} strokeWidth={1.4} />}<h3>{syncing ? "Getting your calendar ready" : query ? "No matches found" : view === "results" ? "No confirmed results in this window" : "A little breathing room"}</h3><p>{syncing ? "Fixtures will appear as each source connects." : query ? "Try another team, tournament or competition." : sport === "cs2" ? "Only verified S-tier main-event matches appear here. Unconfirmed stages stay hidden." : "No matching events in this view. Try a longer date range or another sport."}</p>{!syncing && view !== "results" && view !== "spurs" && <button className="text-action" onClick={() => { setDays(30); setSport("all"); setQuery(""); }}>See the next 30 days <ArrowRight size={15} /></button>}</div>}
-        {filtered.length > limit && <button className="load-more" onClick={() => setPagination({ key: filterKey, count: limit + 30 })}>Show more events <ArrowDown size={15} /><span>{filtered.length - limit} more</span></button>}</div>
+      <section className="agenda" aria-labelledby="agenda-title">
+        <div className="section-head">
+          <h2 id="agenda-title">{heading.list}<span className="count">{filtered.length}</span></h2>
+          {view !== "spurs" && view !== "results" && <div className="segmented" role="group" aria-label="Date range">
+            {RANGES.map(option => <button key={option.value} aria-pressed={days === option.value} onClick={() => setDays(option.value)}>{option.label}</button>)}
+          </div>}
+        </div>
+        <div className="agenda-controls">
+          {view !== "spurs" && <div className="chips" role="group" aria-label="Filter by sport">
+            <button className="chip" aria-pressed={sport === "all"} onClick={() => setSport("all")}>All</button>
+            {(Object.keys(SPORT_NAMES) as Sport[]).map(key => <button className="chip" data-sport={key} key={key} aria-pressed={sport === key} onClick={() => setSport(key)}><span className="dot" />{SPORT_SHORT[key]}</button>)}
+          </div>}
+          <label className="search">
+            <Search size={18} aria-hidden="true" />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a team or event" aria-label="Search schedules" />
+            {query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={16} /></button>}
+          </label>
+        </div>
+        <div className="agenda-list">
+          {[...groups.entries()].map(([day, rows]) => <div className="day-group" key={day}>
+            <h3 className="day-heading">{day === "tbc" ? "Date to be confirmed" : new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`))}{day === today && <em>Today</em>}</h3>
+            <div className="day-rows">{rows.map(event => <EventRow key={event.id} event={event} timezone={timezone} onOpen={setSelected} />)}</div>
+          </div>)}
+          {!filtered.length && <div className="empty">
+            {syncing ? <LoaderCircle size={28} className="spin" /> : <CalendarDays size={28} />}
+            <h3>{syncing ? "Getting your calendar ready" : query ? "No matches found" : view === "results" ? "No confirmed results in this window" : "A little breathing room"}</h3>
+            <p>{syncing ? "Fixtures will appear as each source connects." : query ? "Try another team, tournament or competition." : sport === "cs2" ? "Only verified S-tier main-event matches appear here. Unconfirmed stages stay hidden." : "No matching events in this view. Try a longer date range or another sport."}</p>
+            {!syncing && view !== "results" && view !== "spurs" && <button className="text-link" onClick={() => { setDays(30); setSport("all"); setQuery(""); }}>See the next 30 days <ArrowRight size={16} /></button>}
+          </div>}
+          {filtered.length > limit && <button className="load-more" onClick={() => setPagination({ key: filterKey, count: limit + 30 })}>Show {filtered.length - limit} more <ArrowDown size={18} /></button>}
+        </div>
       </section>
-      <footer className="page-footer"><span><Clock3 size={13} />All times in {timezone === DEFAULT_TIMEZONE ? "Sri Lanka time (UTC+5:30)" : timezone.replaceAll("_", " ")}</span><span>Spurs first. Unless the rules say otherwise.<button onClick={() => setSettings(true)}>Your priorities <ArrowUpRight size={12} /></button></span></footer>
-    </main></div>
 
-    <dialog ref={dialog} className="detail-dialog" onCancel={() => { setSelected(null); setSettings(false); }} aria-label={settings ? "Preferences and sources" : selected?.title ?? "Event details"}><div className="dialog-inner"><button className="dialog-close" aria-label="Close details" onClick={() => { setSelected(null); setSettings(false); }}><X size={20} /></button>
-      {settings ? <><div className="eyebrow">MADE FOR YOU</div><h2>Your kind of sport.</h2><p className="dialog-intro">A watchlist with a very particular order.</p><div className="priority-list">{["Every Tottenham game", "Premier League & European football", "F1 · McLaren & Lando Norris", "VCT internationals", "Americas → Pacific → EMEA → China", "Liquipedia S-tier Counter-Strike"].map((label, i) => <div key={label}><span>{String(i + 1).padStart(2, "0")}</span><strong>{label}</strong>{i === 0 && <Star size={14} />}</div>)}</div><div className="trophy-note"><Trophy size={20} /><div><strong>The international exception</strong><p>{data?.trophy.reason ?? "VCT internationals go first only when Spurs have no remaining trophy chance."}</p>{data?.trophy.competitions.map(c => <span className="trophy-chip" key={c.name}>{c.name}: {c.state === "unknown" ? "unconfirmed" : c.state === "alive" ? "in contention" : c.state}</span>)}</div></div><label className="timezone-setting">Display timezone<select value={timezone} onChange={e => saveDeviceTimezone(e.target.value)}><option value="Asia/Colombo">Sri Lanka · UTC+5:30</option><option value="Europe/London">London · UK time</option><option value="UTC">UTC</option></select></label><h3 className="source-title">Your data sources</h3>{data?.sources.map(source => <div className="source-item" key={source.id}><div><span className={`source-dot ${source.status}`} /><strong>{source.name}</strong><span className="source-state">{source.status === "setup" ? "Setup needed" : source.status === "ready" ? "Connected" : source.status}</span></div><p>{source.message ?? (source.lastSuccess ? `Last updated ${new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(source.lastSuccess))}` : "Waiting for the first update.")}</p>{source.id === "pandascore" && source.status === "setup" && <a href="https://app.pandascore.co/" target="_blank" rel="noreferrer">Get a free PandaScore token <ExternalLink size={12} /></a>}</div>)}<p className="fine-print">Schedules refresh while Skedy is open. Final results can arrive after an event ends. CS2 selections follow a curated Liquipedia list, reviewed {data?.catalogueUpdatedAt ?? "2026-09-10"}.</p></> : selected && <><Badge sport={selected.sport} /><h2 className="detail-title">{selected.title}</h2><p className="dialog-intro">{selected.competition} · {selected.stage}</p>{selected.participants.length > 0 && <div className="detail-teams">{selected.participants.map(p => <div key={p.id}><Logo src={p.logo} name={p.name} /><strong>{p.name}</strong>{selected.status === "completed" && <span className="detail-score">{p.score ?? "–"}</span>}</div>)}</div>}<div className="detail-facts"><div><CalendarDays size={17} /><span>{formatDay(selected, timezone)}</span></div><div><Clock3 size={17} /><span>{formatTime(selected, timezone)} · {timezone.replaceAll("_", " ")}</span></div>{selected.venue && <div><MapPin size={17} /><span>{selected.venue}</span></div>}<div><Radio size={17} /><span>{selected.status.replaceAll("_", " ")}</span></div></div>{selected.resultLines && <div className="classification"><h3>Final classification</h3>{selected.resultLines.map(line => <div className={line.favorite ? "favorite-driver" : ""} key={`${line.position}:${line.name}`}><span>{line.position}</span><strong>{line.name}<small>{line.team}</small></strong><span>{line.detail}</span>{line.favorite && <Star size={12} />}</div>)}</div>}{selected.priorityReason && <div className="detail-priority"><Star size={15} /><p>{selected.priorityReason}</p></div>}<a className="primary-action" href={selected.sourceUrl} target="_blank" rel="noreferrer">View event source <ArrowUpRight size={17} /></a><p className="fine-print">Start times can change. Refresh for the latest published schedule.</p></>}
-    </div></dialog>
+      <footer className="page-footer">
+        <span><Clock3 size={16} />All times in {isDefaultZone ? "Sri Lanka time (UTC+5:30)" : timezone.replaceAll("_", " ")}</span>
+        <button onClick={() => setSettings(true)}>Spurs first. Unless the rules say otherwise. <strong>Your priorities <ArrowUpRight size={14} /></strong></button>
+      </footer>
+    </main>
+
+    <dialog ref={dialog} className="sheet" onCancel={closeDialog} aria-label={settings ? "Preferences and sources" : selected?.title ?? "Event details"}>
+      <div className="sheet-inner">
+        <button className="sheet-close" aria-label="Close" onClick={closeDialog}><X size={20} /></button>
+        {settings ? <>
+          <p className="eyebrow">Preferences</p>
+          <h2>Your kind of sport.</h2>
+          <p className="sheet-intro">A watchlist with a very particular order.</p>
+          <ol className="priority-list">{PRIORITIES.map((label, i) => <li key={label}><span>{String(i + 1).padStart(2, "0")}</span>{label}{i === 0 && <Star size={15} fill="currentColor" />}</li>)}</ol>
+          <div className="callout">
+            <Trophy size={22} />
+            <div>
+              <strong>The international exception</strong>
+              <p>{data?.trophy.reason ?? "VCT internationals go first only when Spurs have no remaining trophy chance."}</p>
+              {!!data?.trophy.competitions.length && <div className="trophy-chips">{data.trophy.competitions.map(c => <span key={c.name}>{c.name}: {c.state === "unknown" ? "unconfirmed" : c.state === "alive" ? "in contention" : c.state}</span>)}</div>}
+            </div>
+          </div>
+          <label className="field">Display timezone
+            <select value={timezone} onChange={e => saveDeviceTimezone(e.target.value)}><option value="Asia/Colombo">Sri Lanka · UTC+5:30</option><option value="Europe/London">London · UK time</option><option value="UTC">UTC</option></select>
+          </label>
+          <h3 className="sheet-subtitle">Data sources</h3>
+          <div className="sources">{data?.sources.map(source => <div className="source" key={source.id}>
+            <div className="source-head"><span className="source-dot" data-status={source.status} /><strong>{source.name}</strong><span>{source.status === "setup" ? "Setup needed" : source.status === "ready" ? "Connected" : source.status}</span></div>
+            <p>{source.message ?? (source.lastSuccess ? `Last updated ${new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(source.lastSuccess))}` : "Waiting for the first update.")}</p>
+            {source.id === "pandascore" && source.status === "setup" && <a className="text-link" href="https://app.pandascore.co/" target="_blank" rel="noreferrer">Get a free PandaScore token <ExternalLink size={14} /></a>}
+          </div>)}</div>
+          <p className="fine-print">Schedules refresh while Skedy is open. Final results can arrive after an event ends. CS2 selections follow a curated Liquipedia list, reviewed {data?.catalogueUpdatedAt ?? "2026-09-10"}.</p>
+        </> : selected && <>
+          <Badge sport={selected.sport} />
+          <h2>{selected.title}</h2>
+          <p className="sheet-intro">{selected.competition} · {selected.stage}</p>
+          {selected.participants.length > 0 && <div className="detail-teams">{selected.participants.map(p => <div key={p.id}><Logo src={p.logo} name={p.name} /><strong>{p.name}</strong>{selected.status === "completed" && <span className="detail-score">{p.score ?? "–"}</span>}</div>)}</div>}
+          <ul className="facts">
+            <li><CalendarDays size={18} />{formatDay(selected, timezone)}</li>
+            <li><Clock3 size={18} />{formatTime(selected, timezone)} · {timezone.replaceAll("_", " ")}</li>
+            {selected.venue && <li><MapPin size={18} />{selected.venue}</li>}
+            <li><Radio size={18} /><span className="capitalize">{selected.status.replaceAll("_", " ")}</span></li>
+          </ul>
+          {selected.resultLines && <div className="classification"><h3 className="sheet-subtitle">Final classification</h3>{selected.resultLines.map(line => <div className={line.favorite ? "favorite" : ""} key={`${line.position}:${line.name}`}><span>{line.position}</span><strong>{line.name}<small>{line.team}</small></strong><span>{line.detail}</span></div>)}</div>}
+          {selected.priorityReason && <div className="callout"><Star size={18} fill="currentColor" /><p>{selected.priorityReason}</p></div>}
+          <a className="primary-action" href={selected.sourceUrl} target="_blank" rel="noreferrer">View event source <ArrowUpRight size={18} /></a>
+          <p className="fine-print">Start times can change. Refresh for the latest published schedule.</p>
+        </>}
+      </div>
+    </dialog>
   </div>;
 }
