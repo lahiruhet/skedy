@@ -6,23 +6,31 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "npm run cf-typegen",
     "dev": "next dev",
+    "prebuild": "npm run cf-typegen",
     "build": "next build",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview": "npm run build:worker && opennextjs-cloudflare preview",
+    "deploy": "npm run build:worker && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings cloudflare-env.d.ts",
     "start": "next start",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "pretypecheck": "npm run cf-typegen",
     "typecheck": "next typegen && tsc --noEmit",
     "test:smoke": "node scripts/smoke.mjs",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@libsql/client": "^0.18.0",
+    "@opennextjs/cloudflare": "^1.20.12",
     "lucide-react": "^1.44.0",
-    "next": "^16.3.5",
+    "next": "^16.4.2",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
+    "@libsql/client": "^0.18.0",
     "@next/eslint-plugin-next": "16.2.6",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
@@ -35,7 +43,8 @@
     "globals": "16.4.0",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.59.3"
+    "typescript-eslint": "8.59.3",
+    "wrangler": "^4.151.3"
   },
   "type": "module"
 }

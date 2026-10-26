@@ -1,6 +1,6 @@
 # Skedy
 
-A personal schedule for Lahiru: every Spurs game, football around it, McLaren and Lando, VCT, and S-tier CS2. Built with Next.js, React and TypeScript, deployed on Vercel with Turso (libSQL) storage. Times default to Asia/Colombo.
+A personal schedule for Lahiru: every Spurs game, football around it, McLaren and Lando, VCT, and S-tier CS2. Built with Next.js, React and TypeScript, deployed on Cloudflare Workers through OpenNext with D1 storage at https://skedy.stackmoth.com. Times default to Asia/Colombo.
 
 ## Run locally
 
@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Without `TURSO_DATABASE_URL`, data is saved to a local SQLite file at `.data/skedy.db` (ignored by Git). `.env` is ignored by Git; never use a `NEXT_PUBLIC_` prefix for the PandaScore token. It stays on the server.
+Open http://localhost:3000. `initOpenNextCloudflareForDev()` supplies a local D1 binding; its data persists under `.wrangler/state` (ignored by Git). Local development and preview do not connect to production D1. No Cloudflare login is required for local development. `.env` is ignored by Git; never use a `NEXT_PUBLIC_` prefix for the PandaScore token. It stays on the server.
 
 The first visit fetches the feeds. Subsequent visits show saved data immediately and refresh sources when due. Refreshing is coordinated across tabs and respects provider backoff. The dashboard checks while it is open; there are no background jobs, notifications or live scores. Completed events show published final results.
 
@@ -48,7 +48,7 @@ For each new edition, verify its Liquipedia page and main-event dates/format; ad
 
 ## Storage and endpoints
 
-A libSQL database (Turso in production, `.data/skedy.db` locally) stores normalized events, source status/leases and standings/provider snapshots. `db/storage.ts` defines the schema and creates it idempotently on first use; `db/libsql.ts` adapts the libSQL client. Stable provider IDs update postponed/rescheduled fixtures in place and prevent Spurs duplicates across competition feeds.
+A Cloudflare D1 database stores normalized events, source status/leases and standings/provider snapshots. `lib/runtime.ts` passes the `DB` binding directly to `Store`. `db/storage.ts` defines the schema and creates it idempotently on first use. Stable provider IDs update postponed/rescheduled fixtures in place and prevent Spurs duplicates across competition feeds. libSQL is a development-only dependency used by `db/libsql.ts` for the SQLite unit tests; production does not use Turso or a filesystem database.
 
 - `GET /api/schedule` — cached ranked events, trophy state and source status; optional `sport`, `from`, `to` filters.
 - `POST /api/sync` — refresh due football, F1 and esports feeds and return the schedule; `?force=1` requests a manual refresh without bypassing rate-limit backoff.
@@ -62,16 +62,27 @@ npm test
 npm run typecheck
 npm run lint
 npm run build
+# Build and serve the production bundle in the local Workers runtime:
+npm run preview
 # With the local server running and a token in .env:
 npm run test:smoke
 ```
 
 Unit tests cover priority exceptions, trophy elimination, timezone boundaries, feed normalization, strict CS2 exclusions, pagination, backoff and durable SQLite persistence. The HTTP smoke check exercises real feeds, refreshes and route filtering; it is not a browser rendering test.
 
-### Deploy to Vercel
+### Deploy to Cloudflare Workers + D1
 
-1. Push this repository to GitHub, then import it at https://vercel.com/new (framework: Next.js, defaults are fine).
-2. In the Vercel project, open **Storage → Marketplace → Turso** and create a database (free plan) and connect it to the project. Check **Settings → Environment Variables**: the app reads exactly `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. If the connect dialog added a prefix, add those two names with the same values. Tables are created on first request.
-3. In **Settings → Environment Variables**, add `PANDASCORE_TOKEN`, then redeploy.
+1. Run `npx wrangler login` and select the account hosting the `stackmoth.com` DNS zone. If you have multiple accounts, set `CLOUDFLARE_ACCOUNT_ID` to that account's ID.
+2. Run `npx wrangler d1 create skedy`. Add the returned `database_id` to the existing `DB` entry in `wrangler.jsonc`. If a `skedy` database already exists, use `npx wrangler d1 list` to find its ID instead. Without an ID, current Wrangler can provision a database during deployment; explicitly setting the ID makes the target clear and allows D1 CLI commands to use it.
+3. Run `npx wrangler secret put PANDASCORE_TOKEN` and paste the token at its prompt. This enables VCT and CS2; football and F1 work without it. The token is a runtime secret and is not needed at build time.
+4. Run `npm run deploy`. This builds Next.js, adapts it with OpenNext, and deploys the Worker and static assets. The custom domain in `wrangler.jsonc` makes Cloudflare provision DNS and TLS for `skedy.stackmoth.com`. The zone must be active in the same Cloudflare account; resolve any existing conflicting DNS record before attaching the domain.
 
-Pushes to the default branch then deploy automatically. To smoke-test the deployment, open it and check **Preferences & sources** for feed status.
+Tables are created on the first request. The database holds cached feeds and refresh state, so a fresh D1 database can refill from the providers without importing Turso. Existing Turso and `.data/skedy.db` data are not modified by this migration.
+
+`npm run build:worker` builds the deployable Worker without publishing. `npm run cf-typegen` regenerates the ignored Cloudflare binding/runtime types; it runs automatically before development, type checking, and Worker builds. `cloudflare-secrets.d.ts` declares the optional runtime token.
+
+On Windows, OpenNext support is limited. If the Worker build fails due to platform tooling, use a Linux checkout under WSL or a Linux CI runner with `npm ci` and `npm run deploy` (do not share Windows `node_modules` with Linux).
+
+To use Workers Builds, connect the repository to the Worker and set the build command to `npm run build:worker` and deploy command to `npx opennextjs-cloudflare deploy`. Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in external CI; keep `PANDASCORE_TOKEN` as a Worker runtime secret.
+
+After deployment, open the dashboard and check **Preferences & sources** for feed status. To run the HTTP/feed smoke check against it, set `SKEDY_URL=https://skedy.stackmoth.com` in your shell and run `npm run test:smoke`.

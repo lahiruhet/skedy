@@ -5,8 +5,7 @@ import "./globals.css";
 const body = Inter({ subsets: ["latin"], variable: "--font-body", display: "swap" });
 const display = Inter_Tight({ subsets: ["latin"], variable: "--font-display", display: "swap" });
 
-// Vercel provides the production hostname at build and run time.
-const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000";
+const siteUrl = "https://skedy.stackmoth.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

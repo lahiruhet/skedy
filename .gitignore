@@ -16,6 +16,9 @@
 # next.js
 /.next/
 /out/
+/.open-next/
+/.wrangler/
+/cloudflare-env.d.ts
 
 # misc
 .DS_Store
@@ -30,6 +33,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+.dev.vars*
 *.tsbuildinfo
 next-env.d.ts
 
